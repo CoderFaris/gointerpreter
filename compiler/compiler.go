@@ -103,7 +103,7 @@ func (c *Compiler) Compile(node ast.Node) error {
 			return err
 		}
 		// emitting OpJumpNotTruthy with some random value
-		c.emit(code.OpJumpNotTruthy, 9999)
+		jumpNotTruthyPos := c.emit(code.OpJumpNotTruthy, 9999)
 
 		err = c.Compile(node.Consequence)
 		if err != nil {
@@ -112,6 +112,29 @@ func (c *Compiler) Compile(node ast.Node) error {
 		if c.lastInstructionIsPop() {
 			c.removeLastPop()
 		}
+
+		// emitting OpJump with random value again
+		jumpPos := c.emit(code.OpJump, 9999)
+
+		afterConsequencePos := len(c.instructions)
+		c.changeOperand(jumpNotTruthyPos, afterConsequencePos)
+
+		if node.Alternative == nil {
+			c.emit(code.OpNull)
+		} else {
+			err := c.Compile(node.Alternative)
+			if err != nil {
+				return err
+			}
+
+			if c.lastInstructionIsPop() {
+				c.removeLastPop()
+			}
+
+		}
+		afterAlternativePos := len(c.instructions)
+		c.changeOperand(jumpPos, afterAlternativePos)
+
 	case *ast.BlockStatement:
 		for _, s := range node.Statements {
 			err := c.Compile(s)
@@ -158,6 +181,18 @@ func (c *Compiler) Bytecode() *Bytecode {
 		Instructions: c.instructions,
 		Constants:    c.constants,
 	}
+}
+
+func (c *Compiler) replaceInstruction(pos int, newInstruction []byte) {
+	for i := 0; i < len(newInstruction); i++ {
+		c.instructions[pos+i] = newInstruction[i]
+	}
+}
+
+func (c *Compiler) changeOperand(opPos int, operand int) {
+	op := code.Opcode(c.instructions[opPos])
+	newInstruction := code.Make(op, operand)
+	c.replaceInstruction(opPos, newInstruction)
 }
 
 func (c *Compiler) setLastInstruction(op code.Opcode, pos int) {
