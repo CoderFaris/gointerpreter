@@ -7,6 +7,7 @@ import (
 
 	"github.com/CoderFaris/gointerpreter/compiler"
 	"github.com/CoderFaris/gointerpreter/lexer"
+	"github.com/CoderFaris/gointerpreter/object"
 	"github.com/CoderFaris/gointerpreter/parser"
 	"github.com/CoderFaris/gointerpreter/vm"
 )
@@ -31,6 +32,10 @@ const MONKEY_FACE = `
 func Start(in io.Reader, out io.Writer) {
 	scanner := bufio.NewScanner(in)
 	// env := object.NewEnvironment()
+
+	constants := []object.Object{}
+	globals := make([]object.Object, vm.GlobalsSize)
+	symbolTable := compiler.NewSymbolTable()
 
 	for {
 		fmt.Printf(PROMPT)
@@ -58,7 +63,7 @@ func Start(in io.Reader, out io.Writer) {
 		// 	io.WriteString(out, evaluated.Inspect())
 		// 	io.WriteString(out, "\n")
 		// }
-		comp := compiler.New()
+		comp := compiler.NewWithState(symbolTable, constants)
 		err := comp.Compile(program)
 
 		if err != nil {
@@ -66,8 +71,9 @@ func Start(in io.Reader, out io.Writer) {
 			continue
 		}
 
-		machine := vm.New(comp.Bytecode())
-
+		code := comp.Bytecode()
+		constants = code.Constants
+		machine := vm.NewWithGlobalsStore(code, globals)
 		err = machine.Run()
 
 		if err != nil {
