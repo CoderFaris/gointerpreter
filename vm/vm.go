@@ -89,6 +89,24 @@ func (vm *VM) Run() error {
 			if err != nil {
 				return err
 			}
+		case code.OpArray:
+			numElements := int(code.ReadUint16(vm.instructions[ip+1:]))
+			ip += 2
+			array := vm.buildArray(vm.sp-numElements, vm.sp)
+			vm.sp -= numElements
+			err := vm.push(array)
+			if err != nil {
+				return err
+			}
+		case code.OpHash:
+			numElements := int(code.ReadUint16(vm.instructions[ip+1:]))
+			ip += 2
+			hash, err := vm.buildHash(vm.sp-numElements, vm.sp)
+			vm.sp -= numElements
+			err = vm.push(hash)
+			if err != nil {
+				return err
+			}
 		case code.OpJump:
 			pos := int(code.ReadUint16(vm.instructions[ip+1:]))
 			ip = pos - 1
@@ -155,6 +173,10 @@ func (vm *VM) executeBinaryOperation(op code.Opcode) error {
 	if leftType == object.INTEGER_OBJ && rightType == object.INTEGER_OBJ {
 		return vm.executeBinaryIntegerOperation(op, left, right)
 	}
+
+	if leftType == object.STRING_OBJ && rightType == object.STRING_OBJ {
+		return vm.executeBinaryStringOperation(op, left, right)
+	}
 	return fmt.Errorf("unsupported types for binary operation: %s %s", leftType, rightType)
 }
 
@@ -178,6 +200,18 @@ func (vm *VM) executeBinaryIntegerOperation(op code.Opcode, left, right object.O
 	}
 
 	return vm.push(&object.Integer{Value: result})
+
+}
+
+func (vm *VM) executeBinaryStringOperation(op code.Opcode, left, right object.Object) error {
+	if op != code.OpAdd {
+		return fmt.Errorf("unknown string operator: %d", op)
+	}
+
+	leftValue := left.(*object.String).Value
+	rightValue := right.(*object.String).Value
+
+	return vm.push(&object.String{Value: leftValue + rightValue})
 
 }
 
@@ -239,6 +273,34 @@ func (vm *VM) executeMinusOperator() error {
 	value := operand.(*object.Integer).Value
 
 	return vm.push(&object.Integer{Value: -value})
+}
+
+func (vm *VM) buildArray(startIndex int, endIndex int) object.Object {
+	elements := make([]object.Object, endIndex-startIndex)
+
+	for i := startIndex; i < endIndex; i++ {
+		elements[i-startIndex] = vm.stack[i]
+	}
+	return &object.Array{Elements: elements}
+}
+
+func (vm *VM) buildHash(startIndex int, endIndex int) (object.Object, error) {
+	hashedPairs := make(map[object.HashKey]object.HashPair)
+
+	for i := startIndex; i < endIndex; i += 2 {
+		key := vm.stack[i]
+		value := vm.stack[i+1]
+
+		pair := object.HashPair{Key: key, Value: value}
+
+		hashKey, ok := key.(object.Hashable)
+		if !ok {
+			return nil, fmt.Errorf("unusable as hash key: %s", key.Type())
+		}
+		hashedPairs[hashKey.HashKey()] = pair
+	}
+
+	return &object.Hash{Pairs: hashedPairs}, nil
 }
 
 func nativeBoolToBooleanObject(input bool) *object.Boolean {
